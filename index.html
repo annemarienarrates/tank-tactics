@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tank Tactics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Architects+Daughter&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
+<style>
+/* VOICE occasion: a slow, sneaky war game for a friend group
+   IDEA a war-room blueprint: drafting grid, chalk lines, flag tokens with name tags
+   PICTURE the live board, each player a flag on the grid with a dark name tag
+   COLOUR blueprint blue #1f4e8c, chalk white, tag ink #15171e, signal red #c0392b
+   TYPE Architects Daughter for labels and tags, Courier Prime for body
+   LAYOUT board left with command panel right; under 760px board first, panel below */
+:root{color-scheme:dark;--bp:#1f4e8c;--bp2:#2a5f9e;--chalk:#f4f8ff;--line:rgba(244,248,255,.62);--soft:rgba(244,248,255,.72);--panel:rgba(8,26,60,.38);--ink:#15171e;--red:#c0392b;--amber:#ffd166;--hand:'Architects Daughter',cursive;--mono:'Courier Prime',monospace}
+*{box-sizing:border-box;min-width:0}
+html,body{margin:0;height:100%}
+body{background-color:var(--bp);background-image:linear-gradient(rgba(255,255,255,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.07) 1px,transparent 1px),linear-gradient(rgba(255,255,255,.13) 2px,transparent 2px),linear-gradient(90deg,rgba(255,255,255,.13) 2px,transparent 2px);background-size:24px 24px,24px 24px,120px 120px,120px 120px;color:var(--chalk);font:17px/1.45 var(--mono);overflow-x:clip}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:16px max(3vw,16px);max-width:1240px;margin:0 auto}
+h1{font:clamp(28px,4.4vw,44px)/1.05 var(--hand);margin:0;letter-spacing:-.01em}
+h1 small{font:15px var(--mono);color:var(--soft);display:block;margin-top:4px}
+h2{font:22px/1.2 var(--hand);margin:0 0 8px}
+nav{display:flex;flex-wrap:wrap;gap:10px}
+main{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:18px;padding:0 max(3vw,16px) 28px;max-width:1240px;margin:0 auto;align-items:start}
+@media(max-width:780px){main{grid-template-columns:minmax(0,1fr)}}
+.frame{border:2px solid var(--line);padding:10px;background:rgba(8,26,60,.25);position:relative}
+#fig{width:min(100%,max(300px,calc(100svh - 140px)));margin:0 auto;aspect-ratio:1;position:relative}
+#board{display:block;margin:0 auto;cursor:pointer;touch-action:manipulation}
+.under{display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;color:var(--soft);margin-top:8px;font:17px var(--hand)}
+.card{background:var(--panel);border:2px solid var(--line);padding:12px 14px;margin-bottom:14px}
+.mut{color:var(--soft)}
+.note{font-size:15px;color:var(--soft);margin:8px 0}
+button{font:17px/1.1 var(--hand);color:var(--chalk);background:transparent;border:2px solid var(--chalk);min-height:44px;padding:8px 14px;cursor:pointer}
+button:hover{background:rgba(255,255,255,.12)}
+button:active{transform:translateY(1px)}
+button.hot{background:var(--chalk);color:var(--bp);font-weight:700}
+button.hot:hover{background:#fff}
+button.red{background:var(--red);border-color:var(--red);color:#fff}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+input,select{font:16px/1.2 var(--mono);min-height:44px;border:2px solid var(--line);background:rgba(8,26,60,.45);color:var(--chalk);padding:6px 10px;width:100%}
+select option{background:#173f74;color:var(--chalk)}
+input[type=color]{padding:2px;width:52px;height:44px;cursor:pointer}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.row>button{flex:1 1 auto}
+.stat{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0}
+.stat div{border:2px dashed var(--line);padding:6px 8px;font:15px var(--hand)}
+.stat b{display:block;font:26px/1.1 var(--hand)}
+.me{display:flex;gap:12px;align-items:center}
+.me img{width:56px;height:56px;flex:none;border:2px solid var(--ink)}
+.name{font:22px/1.2 var(--hand)}
+ul{list-style:none;margin:0;padding:0}
+#roster li{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:10px;align-items:center;padding:5px 0;border-top:1px dashed var(--line)}
+#roster li:first-child{border-top:0}
+#roster img{width:30px;height:30px;border:2px solid var(--ink)}
+#roster .dead{opacity:.5}
+#roster .dead b{text-decoration:line-through}
+.hearts{white-space:nowrap}
+#log{max-height:260px;overflow:auto}
+#log li{padding:4px 0;border-top:1px dashed rgba(244,248,255,.3)}
+#log li.day{font:17px var(--hand);color:var(--amber)}
+#log li.secret{color:var(--amber)}
+.target{border:2px solid var(--amber);padding:10px;margin-top:10px}
+#chat{max-height:240px;overflow:auto;display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.msg{border-left:3px solid var(--line);padding:2px 0 2px 8px;overflow-wrap:anywhere}
+.msg.dm{border-color:var(--amber)}
+.msg .who{font:15px var(--hand);color:var(--soft)}
+.msg.dm .who{color:var(--amber)}
+.chatform{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
+.chatform select{grid-column:1/-1}
+dialog{border:2px solid var(--chalk);background:#1a467f;color:var(--chalk);padding:18px;max-width:min(780px,calc(100vw - 24px));width:100%;max-height:calc(100svh - 24px)}
+dialog::backdrop{background:rgba(6,18,40,.75)}
+.trow{display:grid;grid-template-columns:48px minmax(0,1fr) minmax(0,1.5fr) 44px;gap:8px;align-items:center;margin-bottom:8px}
+.trow .fl{width:48px;height:48px;padding:0;border:2px solid var(--chalk)}
+.trow .fl img{width:100%;height:100%;display:block}
+.trow .fl[aria-pressed=true]{outline:3px solid var(--amber);outline-offset:2px}
+.trow .x{padding:0}
+@media(max-width:560px){.trow{grid-template-columns:48px minmax(0,1fr) 44px}.trow .motto{grid-column:2/3}}
+.flagbox{border:2px dashed var(--line);padding:12px;margin:10px 0;display:grid;grid-template-columns:120px minmax(0,1fr);gap:14px;align-items:start}
+.flagbox img{width:120px;height:120px;border:2px solid var(--ink)}
+@media(max-width:560px){.flagbox{grid-template-columns:minmax(0,1fr)}}
+.cols{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:10px 0}
+label{display:block;font:16px/1.6 var(--hand)}
+.code{font:clamp(34px,7vw,56px)/1.1 var(--hand);color:var(--amber);margin:4px 0 10px;letter-spacing:.12em}
+#lobby{padding:8px;min-height:300px}
+#lobby li{display:flex;gap:10px;align-items:center;padding:4px 0}
+#lobby img{width:36px;height:36px;border:2px solid var(--ink)}
+.over{position:absolute;inset:0;background:rgba(10,30,66,.9);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:16px}
+.over img{width:110px;height:110px;border:3px solid var(--ink)}
+.over .big{font:clamp(26px,4vw,38px)/1.2 var(--hand)}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--chalk);padding:10px 16px;border:2px solid var(--amber);display:none;z-index:9;max-width:calc(100vw - 32px)}
+.rules li{margin:6px 0;padding-left:18px;text-indent:-18px}
+.rules li::before{content:'\2192  ';color:var(--amber)}
+.tabs{display:flex;gap:8px;margin:10px 0}
+.tabs button[aria-pressed=true]{background:var(--chalk);color:var(--bp)}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<header>
+  <h1>Tank Tactics<small>One AP a day. Trust nobody.</small></h1>
+  <nav>
+    <button id="bLocal">Local game</button>
+    <button id="bOnline" class="hot">Online room</button>
+    <button id="bRules">Rules</button>
+  </nav>
+</header>
+<main>
+  <section>
+    <div class="frame">
+      <div id="fig"><canvas id="board" aria-label="Battlefield"></canvas><div id="over" class="over" hidden></div></div>
+      <div id="lobby" hidden></div>
+    </div>
+    <div class="under"><span id="under1"></span><span id="under2"></span></div>
+  </section>
+  <aside>
+    <div class="card" id="status"></div>
+    <div class="card" id="mine"></div>
+    <div class="card"><h2>Comms</h2><div id="chat" aria-live="polite"></div><form class="chatform" id="chatForm"><select id="chatTo" aria-label="Send to"></select><input id="chatText" maxlength="280" autocomplete="off" placeholder="Psst. Truce till Friday?" aria-label="Message"><button class="hot" type="submit">Send</button></form></div>
+    <div class="card"><h2>Roster</h2><ul id="roster"></ul></div>
+    <div class="card"><h2>War log</h2><ul id="log"></ul></div>
+  </aside>
+</main>
+
+<dialog id="dLocal">
+  <h2>New local game</h2>
+  <p class="note">Pass-and-play on one screen. Each full round is one day. Tap a flag to redesign it.</p>
+  <div id="setupRows"></div>
+  <div id="setupFlag"></div>
+  <div class="row"><button id="addTank">Add player</button></div>
+  <div class="grid2">
+    <label>Board size<select id="lSize"></select></label>
+    <label>AP gifts<select id="lGift"><option value="public">Public</option><option value="private">Private</option></select></label>
+  </div>
+  <div class="row"><button id="lCancel">Cancel</button><button id="lStart" class="hot">Deploy</button></div>
+</dialog>
+
+<dialog id="dOnline">
+  <h2>Online room</h2>
+  <div id="onNo" hidden><p class="note">Online rooms aren't switched on yet. The host of this page needs to add their Firebase settings to firebase-config.js.</p><div class="row"><button data-close>Close</button></div></div>
+  <div id="onYes">
+    <label>Your name and motto</label>
+    <div class="grid2" style="margin-top:0"><input id="oName" maxlength="14" aria-label="Your name"><input id="oMotto" maxlength="40" placeholder="Motto" aria-label="Motto"></div>
+    <div id="oFlag"></div>
+    <div class="tabs"><button id="tCreate" aria-pressed="true">Create</button><button id="tJoin" aria-pressed="false">Join</button></div>
+    <div id="pCreate">
+      <div class="grid2">
+        <label>Max players<select id="oMax"></select></label>
+        <label>Board size<select id="oSize"></select></label>
+        <label>Daily AP drop<select id="oDrop"></select></label>
+        <label>AP gifts<select id="oGift"><option value="public">Public</option><option value="private">Private</option></select></label>
+      </div>
+      <div class="row"><button data-close>Cancel</button><button id="oCreate" class="hot">Create room</button></div>
+    </div>
+    <div id="pJoin" hidden>
+      <label>Room code<input id="oCode" maxlength="5" autocomplete="off" placeholder="K7QXM" style="text-transform:uppercase"></label>
+      <div class="row" style="margin-top:12px"><button data-close>Cancel</button><button id="oJoin" class="hot">Join room</button></div>
+    </div>
+    <p id="oErr" class="note" style="color:var(--amber)"></p>
+    <div id="oRejoin"></div>
+  </div>
+</dialog>
+
+<dialog id="dRules">
+  <h2>Rules of engagement</h2>
+  <ul class="rules">
+    <li>Everyone starts with 3 hearts, 0 AP and a range of 2, somewhere random on the map.</li>
+    <li>Your hearts are secret. Nobody else sees them, and only you and your target see a hit land. A kill is public.</li>
+    <li>Everyone gets 1 AP per day. AP never expires. Spend it whenever you like.</li>
+    <li>Move one tile in any of 8 directions: 1 AP. You can't drive onto another tank.</li>
+    <li>Attack a tank in range: 1 AP. It loses a heart.</li>
+    <li>Give 1 AP to a tank in range: costs you 1 AP.</li>
+    <li>Extend your range by 1: 2 AP. No cap. Range is a square, so diagonals count.</li>
+    <li>Lose all 3 hearts and you're out. No jury, no revivals. Last tank standing wins.</li>
+    <li>Comms go to everyone, or privately to one player.</li>
+    <li>Online, AP drops once a day at the host's chosen time. Locally, each full round is a day.</li>
+  </ul>
+  <p class="note">Adapted from Luke Muscat's Tank Turn Tactics, the office game Halfbrick had to ban.</p>
+  <div class="row"><button data-close>Got it</button></div>
+</dialog>
+
+<div id="toast" role="status"></div>
+
+<script>
+{
+/* ===== ENGINE START ===== */
+const DAY=864e5;
+const COST={move:1,attack:1,gift:1,upgrade:2};
+const cheb=(a,b)=>Math.max(Math.abs(a.x-b.x),Math.abs(a.y-b.y));
+function hash(s){let h=2166136261;for(const ch of String(s)){h^=ch.charCodeAt(0);h=Math.imul(h,16777619)}return h>>>0}
+function rng(seed){let a=hash(seed);return()=>{a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function sizeFor(n){return Math.max(8,Math.min(24,Math.ceil(Math.sqrt(n)*4.5)))}
+function spawn(n,size,seed){
+  const R=rng(seed);
+  for(let d=4;d>=1;d--){
+    for(let tries=0;tries<60;tries++){
+      const pts=[];let ok=true;
+      for(let i=0;i<n&&ok;i++){
+        let placed=false;
+        for(let k=0;k<200;k++){const p={x:Math.floor(R()*size),y:Math.floor(R()*size)};if(pts.every(q=>cheb(p,q)>d)){pts.push(p);placed=true;break}}
+        ok=placed;
+      }
+      if(ok)return pts;
+    }
+  }
+  return [...Array(n)].map((_,i)=>({x:(i*2)%size,y:Math.floor(i*2/size)}));
+}
+function mkPlayer(o,pos){return{id:o.id,name:o.name,flag:o.flag,motto:o.motto||'',x:pos.x,y:pos.y,hp:3,range:2,ap:0,alive:true}}
+function find(st,id){return st.players.find(p=>p.id==id)}
+function occupied(st,x,y){return st.players.some(p=>p.alive&&p.x==x&&p.y==y)}
+function check(st,p,a){
+  if(st.winner)return'The war is over';
+  if(!p||!p.alive)return'That tank is scrap';
+  const c=COST[a.type];if(c==null)return'Unknown order';
+  if(p.ap<c)return'Needs '+c+' AP';
+  if(a.type=='move'){
+    if(!(a.x>=0&&a.y>=0&&a.x<st.size&&a.y<st.size))return'Off the map';
+    if(cheb(p,a)!=1)return'One tile at a time';
+    if(occupied(st,a.x,a.y))return'That tile is taken';
+  }
+  if(a.type=='attack'||a.type=='gift'){
+    const t=find(st,a.to);
+    if(!t||!t.alive)return'No live target there';
+    if(t.id==p.id)return'Not yourself';
+    if(cheb(p,t)>p.range)return'Out of range';
+  }
+  return null;
+}
+function apply(st,p,a,ts){
+  p.ap-=COST[a.type];
+  const e={type:a.type,by:p.id,day:st.day,ts:ts||Date.now()};
+  if(a.type=='move'){p.x=a.x;p.y=a.y;e.x=a.x;e.y=a.y}
+  if(a.type=='upgrade'){p.range++;e.range=p.range}
+  if(a.type=='attack'){const t=find(st,a.to);t.hp--;e.to=t.id;if(t.hp<=0){t.alive=false;e.kill=true}}
+  if(a.type=='gift'){const t=find(st,a.to);t.ap++;e.to=t.id;if(st.giftVis=='private')e.priv=true}
+  st.log.push(e);
+  const alive=st.players.filter(q=>q.alive);
+  if(alive.length==1)st.winner=alive[0].id;
+  return e;
+}
+function newDay(st){st.day++;st.players.forEach(p=>{if(p.alive)p.ap++});st.log.push({type:'drop',day:st.day})}
+function newLocal(roster,size,giftVis,seed){
+  const n=roster.length;size=size||sizeFor(n);
+  const pos=spawn(n,size,seed);
+  const st={mode:'local',size,day:0,turn:0,log:[],chat:[],winner:null,giftVis,handoff:true,undo:[],players:roster.map((o,i)=>mkPlayer({...o,id:'p'+i},pos[i]))};
+  newDay(st);return st;
+}
+function endTurn(st){
+  let i=st.turn;
+  for(let k=0;k<st.players.length;k++){i++;if(i>=st.players.length){i=0;newDay(st)}if(st.players[i].alive)break}
+  st.turn=i;st.undo=[];st.handoff=true;
+}
+function dropsAt(r,t){return t<r.firstDrop?0:Math.floor((t-r.firstDrop)/DAY)+1}
+function deriveOnline(room,players,actions,now){
+  const roster=(room.roster||[]).map(id=>players.find(p=>p.id==id)).filter(Boolean);
+  const size=room.size||sizeFor(roster.length);
+  const pos=spawn(roster.length,size,room.seed);
+  const st={mode:'online',size,day:0,log:[],winner:null,giftVis:room.giftVis,players:roster.map((o,i)=>Object.assign(mkPlayer(o,pos[i]),{delta:0}))};
+  let last=0;
+  const catchUp=d=>{while(last<d&&!st.winner){last++;st.log.push({type:'drop',day:last,ts:room.firstDrop+(last-1)*DAY})}};
+  const acts=[...actions].sort((a,b)=>a.ts-b.ts||(a.id<b.id?-1:1));
+  for(const a of acts){
+    const d=dropsAt(room,a.ts);catchUp(d);st.day=d;
+    st.players.forEach(q=>q.ap=d+q.delta);
+    const p=find(st,a.by);const err=check(st,p,a);
+    if(err){if(p)st.log.push({type:'blocked',by:a.by,why:err,day:d,ts:a.ts});continue}
+    apply(st,p,a,a.ts);
+    st.players.forEach(q=>q.delta=q.ap-d);
+  }
+  const dn=dropsAt(room,now);catchUp(dn);st.day=dn;
+  st.players.forEach(q=>q.ap=dn+q.delta);
+  st.nextDrop=room.firstDrop+dn*DAY;
+  return st;
+}
+/* ===== ENGINE END ===== */
+
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const COLS='ABCDEFGHIJKLMNOPQRSTUVWX';
+const tileName=(x,y)=>COLS[x]+(y+1);
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const store={get(k){try{return JSON.parse(localStorage.getItem('tt.'+k))}catch(e){return null}},set(k,v){try{localStorage.setItem('tt.'+k,JSON.stringify(v))}catch(e){}}};
+
+/* ---------- flags ---------- */
+const PATTERNS={solid:'Solid',v3:'Vertical tricolour',h3:'Horizontal tricolour',v2:'Vertical halves',h2:'Horizontal halves',cross:'Centred cross',nordic:'Nordic cross',saltire:'Saltire',diag:'Diagonal',canton:'Canton',border:'Border',hoist:'Hoist triangle',quarters:'Quarters'};
+const EMBLEMS={none:'None',star:'Star',disc:'Disc',ring:'Ring',diamond:'Diamond',sun:'Sun'};
+const PRESETS=[
+  ['Romania',{p:'v3',c:['#002b7f','#fcd116','#ce1126'],e:'none',ec:'#ffffff'}],
+  ['France',{p:'v3',c:['#0055a4','#ffffff','#ef4135'],e:'none',ec:'#ffffff'}],
+  ['Italy',{p:'v3',c:['#009246','#ffffff','#ce2b37'],e:'none',ec:'#ffffff'}],
+  ['Ireland',{p:'v3',c:['#169b62','#ffffff','#ff883e'],e:'none',ec:'#ffffff'}],
+  ['Germany',{p:'h3',c:['#000000','#dd0000','#ffce00'],e:'none',ec:'#ffffff'}],
+  ['Netherlands',{p:'h3',c:['#ae1c28','#ffffff','#21468b'],e:'none',ec:'#ffffff'}],
+  ['Ukraine',{p:'h2',c:['#0057b7','#ffd700','#ffffff'],e:'none',ec:'#ffffff'}],
+  ['Poland',{p:'h2',c:['#ffffff','#dc143c','#ffffff'],e:'none',ec:'#ffffff'}],
+  ['Japan',{p:'solid',c:['#ffffff','#ffffff','#ffffff'],e:'disc',ec:'#bc002d'}],
+  ['Sweden',{p:'nordic',c:['#006aa7','#fecc02','#fecc02'],e:'none',ec:'#ffffff'}],
+  ['Norway',{p:'nordic',c:['#ba0c2f','#00205b','#ffffff'],e:'none',ec:'#ffffff'}],
+  ['Denmark',{p:'nordic',c:['#c8102e','#ffffff','#ffffff'],e:'none',ec:'#ffffff'}],
+  ['Switzerland',{p:'cross',c:['#da291c','#ffffff','#ffffff'],e:'none',ec:'#ffffff'}],
+  ['Scotland',{p:'saltire',c:['#005eb8','#ffffff','#ffffff'],e:'none',ec:'#ffffff'}],
+  ['Vietnam',{p:'solid',c:['#da251d','#da251d','#da251d'],e:'star',ec:'#ffcd00'}],
+  ['Kyrgyz-ish',{p:'solid',c:['#e8112d','#e8112d','#e8112d'],e:'sun',ec:'#ffef00'}]
+];
+const PAL=['#ffffff','#111111','#ce1126','#ef4135','#ff883e','#fcd116','#169b62','#1e5631','#6cace4','#0055a4','#00205b','#6a2c91','#7a1f2b','#8d99a6'];
+function randomFlag(){const R=Math.random,pick=a=>a[Math.floor(R()*a.length)];const ks=Object.keys(PATTERNS);const c=[];while(c.length<3){const x=pick(PAL);if(!c.includes(x))c.push(x)}return{p:pick(ks),c,e:R()<.45?pick(Object.keys(EMBLEMS).slice(1)):'none',ec:pick(PAL.filter(x=>x!=c[0]))}}
+function star(c,cx,cy,r,pts=5,inner=.42){c.beginPath();for(let i=0;i<pts*2;i++){const a=-Math.PI/2+i*Math.PI/pts,rr=i%2?r*inner:r;c.lineTo(cx+Math.cos(a)*rr,cy+Math.sin(a)*rr)}c.closePath();c.fill()}
+function drawFlag(c,f,x,y,w,h){
+  f=f&&f.c?f:PRESETS[0][1];const[a,b,d]=f.c;c.save();c.beginPath();c.rect(x,y,w,h);c.clip();
+  const R=(col,X,Y,W,H)=>{c.fillStyle=col;c.fillRect(x+X*w,y+Y*h,W*w+.5,H*h+.5)};
+  const tri=(col,p)=>{c.fillStyle=col;c.beginPath();p.forEach(([X,Y])=>c.lineTo(x+X*w,y+Y*h));c.closePath();c.fill()};
+  let ex=.5,ey=.5,es=.24;
+  switch(f.p){
+    case'v3':R(a,0,0,1/3,1);R(b,1/3,0,1/3,1);R(d,2/3,0,1/3,1);break;
+    case'h3':R(a,0,0,1,1/3);R(b,0,1/3,1,1/3);R(d,0,2/3,1,1/3);break;
+    case'v2':R(a,0,0,.5,1);R(b,.5,0,.5,1);break;
+    case'h2':R(a,0,0,1,.5);R(b,0,.5,1,.5);break;
+    case'cross':R(a,0,0,1,1);R(b,.4,.15,.2,.7);R(b,.15,.4,.7,.2);es=.12;break;
+    case'nordic':R(a,0,0,1,1);R(d,.24,0,.24,1);R(d,0,.38,1,.24);R(b,.29,0,.14,1);R(b,0,.43,1,.14);ex=.36;break;
+    case'saltire':R(a,0,0,1,1);c.strokeStyle=b;c.lineWidth=Math.max(w,h)*.17;c.beginPath();c.moveTo(x,y);c.lineTo(x+w,y+h);c.moveTo(x+w,y);c.lineTo(x,y+h);c.stroke();es=.16;break;
+    case'diag':R(a,0,0,1,1);tri(b,[[1,0],[1,1],[0,1]]);c.strokeStyle=d;c.lineWidth=Math.max(w,h)*.12;c.beginPath();c.moveTo(x+w,y);c.lineTo(x,y+h);c.stroke();ex=.27;ey=.27;es=.16;break;
+    case'canton':R(a,0,0,1,1);R(b,0,0,.5,.5);ex=.25;ey=.25;es=.16;break;
+    case'border':R(b,0,0,1,1);R(a,.14,.14,.72,.72);break;
+    case'hoist':R(a,0,0,1,.5);R(b,0,.5,1,.5);tri(d,[[0,0],[.5,.5],[0,1]]);ex=.18;es=.13;break;
+    case'quarters':R(a,0,0,.5,.5);R(b,.5,0,.5,.5);R(b,0,.5,.5,.5);R(a,.5,.5,.5,.5);break;
+    default:R(a,0,0,1,1);
+  }
+  const cx=x+ex*w,cy=y+ey*h,r=es*Math.min(w,h);c.fillStyle=c.strokeStyle=f.ec||'#fff';
+  if(f.e=='star')star(c,cx,cy,r);
+  if(f.e=='disc'){c.beginPath();c.arc(cx,cy,r,0,7);c.fill()}
+  if(f.e=='ring'){c.lineWidth=r*.35;c.beginPath();c.arc(cx,cy,r*.8,0,7);c.stroke()}
+  if(f.e=='diamond'){c.beginPath();c.moveTo(cx,cy-r);c.lineTo(cx+r*.7,cy);c.lineTo(cx,cy+r);c.lineTo(cx-r*.7,cy);c.closePath();c.fill()}
+  if(f.e=='sun'){star(c,cx,cy,r*1.35,16,.62);c.beginPath();c.arc(cx,cy,r*.62,0,7);c.fill()}
+  c.restore();
+}
+const FI={};
+function flagImg(f){const k=JSON.stringify(f||0);if(FI[k])return FI[k];const cv=document.createElement('canvas');cv.width=cv.height=96;drawFlag(cv.getContext('2d'),f,0,0,96,96);return FI[k]=cv.toDataURL()}
+function flagEditor(box,get,set,title){
+  const f=get();
+  box.innerHTML=`<div class="flagbox"><img src="${flagImg(f)}" alt="Flag preview"><div>
+    <label style="margin-bottom:6px">${esc(title)}</label>
+    <div class="grid2" style="margin:0 0 8px"><select id="fePre" aria-label="Preset"><option value="">Preset flags</option>${PRESETS.map((p,i)=>`<option value="${i}">${p[0]}</option>`).join('')}</select>
+    <select id="fePat" aria-label="Pattern">${Object.entries(PATTERNS).map(([k,n])=>`<option value="${k}"${k==f.p?' selected':''}>${n}</option>`).join('')}</select></div>
+    <div class="cols"><input type="color" id="fe0" value="${f.c[0]}" aria-label="Colour 1"><input type="color" id="fe1" value="${f.c[1]}" aria-label="Colour 2"><input type="color" id="fe2" value="${f.c[2]}" aria-label="Colour 3">
+    <select id="feEm" aria-label="Emblem" style="width:auto;flex:1 1 110px">${Object.entries(EMBLEMS).map(([k,n])=>`<option value="${k}"${k==f.e?' selected':''}>${n}</option>`).join('')}</select><input type="color" id="feEc" value="${f.ec}" aria-label="Emblem colour"></div>
+    <div class="row" style="margin-top:8px"><button type="button" id="feRnd">Random flag</button></div></div></div>`;
+  const upd=nf=>{set(nf);flagEditor(box,get,set,title)};
+  const read=()=>({p:$('#fePat').value,c:[$('#fe0').value,$('#fe1').value,$('#fe2').value],e:$('#feEm').value,ec:$('#feEc').value});
+  $('#fePre').onchange=e=>{if(e.target.value!=='')upd(JSON.parse(JSON.stringify(PRESETS[+e.target.value][1])))};
+  ['#fePat','#feEm'].forEach(s=>$(s).onchange=()=>upd(read()));
+  ['#fe0','#fe1','#fe2','#feEc'].forEach(s=>$(s).onchange=()=>upd(read()));
+  $('#feRnd').onclick=()=>upd(randomFlag());
+}
+
+/* ---------- hearts ---------- */
+const heart=on=>`<svg width="18" height="16" viewBox="0 0 7 6" aria-hidden="true"><path d="M1 0h2v1h1V0h2v1h1v2H6v1H5v1H4v1H3V5H2V4H1V3H0V1h1z" fill="${on?'#ff6b5e':'rgba(244,248,255,.25)'}"/></svg>`;
+const hearts=p=>`<span class="hearts" aria-label="${p.hp} hearts">${[0,1,2].map(i=>heart(i<p.hp)).join('')}</span>`;
+
+function sample(){
+  const R=[['Lady',PRESETS[0][1],'Read the sky, then fire'],['Moxie',PRESETS[10][1],'Never trust a gift'],['Brutus',PRESETS[4][1],'Slow is smooth'],['Wren',PRESETS[3][1],'Ask me tomorrow'],['Kit',PRESETS[8][1],'Probably friendly']];
+  const P=[{x:4,y:5},{x:6,y:4},{x:1,y:8},{x:7,y:8},{x:2,y:1}];
+  const st={mode:'local',size:10,day:4,turn:0,log:[],chat:[],winner:null,giftVis:'public',handoff:false,undo:[],sample:true,players:R.map((r,i)=>mkPlayer({id:'p'+i,name:r[0],flag:r[1],motto:r[2]},P[i]))};
+  const [a,b,c,d,e]=st.players;a.ap=3;Object.assign(b,{hp:1,ap:1,range:3});c.ap=2;Object.assign(d,{hp:0,alive:false});Object.assign(e,{hp:2,ap:1});
+  st.log=[{type:'drop',day:1},{type:'drop',day:2},{type:'upgrade',by:'p1',range:3,day:2},{type:'attack',by:'p3',to:'p0',day:2},{type:'drop',day:3},{type:'attack',by:'p0',to:'p3',day:3},{type:'attack',by:'p2',to:'p3',day:3,kill:true},{type:'drop',day:4},{type:'gift',by:'p4',to:'p0',day:4}];
+  a.hp=2;
+  st.chat=[{from:'p1',to:'all',text:'Whoever took Wren out: respect. Also, watch your back.',day:3},{from:'p4',to:'p0',text:'Sent you 1 AP. Moxie is in your range. Do the thing.',day:4},{from:'p2',to:'p1',text:'Truce until day 6?',day:4}];
+  return st;
+}
+
+let MODE='local',LOCAL=null,G=null,SEL=null,BUSY=false,BLINK=true;
+let db=null,user=null,ME=null,CANWRITE=null;
+const ON={code:null,room:null,players:[],actions:[],chat:[],unsubs:[],loaded:false};
+
+function cur(){if(!G)return null;if(G.mode=='local')return G.players[G.turn];return find(G,ME)}
+function viewer(){if(!G)return MODE=='online'?ME:null;if(G.mode=='local')return G.handoff?null:G.players[G.turn].id;return ME}
+function canAct(){const p=cur();if(!p||!p.alive||G.winner)return false;if(G.mode=='local')return !G.handoff;return true}
+function saveLocal(){if(LOCAL&&!LOCAL.sample)store.set('local2',LOCAL)}
+let tt;function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(tt);tt=setTimeout(()=>t.style.display='none',2600)}
+
+async function order(a){
+  if(!canAct()||BUSY)return;
+  const p=cur();const err=check(G,p,a);if(err){toast(err);return}
+  if(G.mode=='local'){
+    G.undo.push(JSON.stringify({...G,undo:[]}));
+    const e=apply(G,p,a);if(G.sample)G.sample=false;
+    if(e.kill)toast(find(G,e.to).name+' is out');else if(a.type=='attack')toast('Hit');
+    saveLocal();render();return;
+  }
+  BUSY=true;
+  try{await db.collection('rooms/'+ON.code+'/actions').add({by:ME,type:a.type,x:a.x??null,y:a.y??null,to:a.to??null,ts:Date.now()});if(a.type=='attack')toast('Hit')}
+  catch(e){toast(e&&(e.code=='permission-denied'||e.code=='invalid_argument')?'The room refused that order. Reload and try again.':'That order didn’t go through. Try again.')}
+  BUSY=false;
+}
+
+/* ---------- board ---------- */
+const cv=$('#board'),ctx=cv.getContext('2d');let TILE=0;
+function rrect(x,y,w,h){ctx.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h))}
+function draw(){
+  const box=$('#fig');const W=box.clientWidth;const dpr=window.devicePixelRatio||1;
+  if(!G){cv.width=cv.height=1;cv.style.width=cv.style.height='0px';return}
+  const n=G.size,t=Math.floor(W/n),S=t*n;TILE=t;
+  cv.width=S*dpr;cv.height=S*dpr;cv.style.width=cv.style.height=S+'px';cv.style.marginTop=Math.floor((W-S)/2)+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle='#2d63a4';ctx.fillRect(0,0,S,S);
+  ctx.strokeStyle='rgba(255,255,255,.10)';ctx.lineWidth=1;ctx.beginPath();
+  for(let i=0;i<=n*4;i++){const v=i*t/4+.5;ctx.moveTo(v,0);ctx.lineTo(v,S);ctx.moveTo(0,v);ctx.lineTo(S,v)}ctx.stroke();
+  const g=Math.max(2,Math.round(t*.09));
+  ctx.fillStyle='rgba(205,225,250,.26)';
+  for(let y=0;y<n;y++)for(let x=0;x<n;x++)rrect(x*t+g,y*t+g,t-2*g,t-2*g);
+  ctx.strokeStyle='rgba(255,255,255,.22)';ctx.lineWidth=2;ctx.beginPath();
+  for(let i=0;i<=n;i+=5){const v=Math.min(S-1,i*t+1);ctx.moveTo(v,0);ctx.lineTo(v,S);ctx.moveTo(0,v);ctx.lineTo(S,v)}ctx.stroke();
+  const me=cur(),act=canAct(),vw=viewer();
+  if(me&&me.alive&&vw==me.id){
+    const x0=Math.max(0,me.x-me.range),y0=Math.max(0,me.y-me.range),x1=Math.min(n-1,me.x+me.range),y1=Math.min(n-1,me.y+me.range);
+    ctx.fillStyle='rgba(255,255,255,.10)';ctx.fillRect(x0*t,y0*t,(x1-x0+1)*t,(y1-y0+1)*t);
+    ctx.strokeStyle='#f4f8ff';ctx.lineWidth=Math.max(2,t/16);ctx.setLineDash([t/5,t/8]);ctx.strokeRect(x0*t+2,y0*t+2,(x1-x0+1)*t-4,(y1-y0+1)*t-4);ctx.setLineDash([]);
+    if(act&&me.ap>=1)for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const x=me.x+dx,y=me.y+dy;if((dx||dy)&&x>=0&&y>=0&&x<n&&y<n&&!occupied(G,x,y)){ctx.fillStyle='rgba(225,232,242,.85)';ctx.beginPath();ctx.arc(x*t+t/2,y*t+t/2,Math.max(4,t*.15),0,7);ctx.fill()}}
+  }
+  const showNum=p=>G.giftVis!='private'||p.id==vw;
+  const fs=Math.max(13,Math.round(t*.34));
+  const order_=[...G.players].sort((a,b)=>a.alive-b.alive);
+  for(const p of order_){
+    const f=Math.round(t*.76),fx=p.x*t+(t-f)/2,fy=p.y*t+(t-f)/2;
+    ctx.globalAlpha=p.alive?1:.45;
+    ctx.fillStyle='#15171e';ctx.fillRect(fx-2,fy-2,f+4,f+4);
+    drawFlag(ctx,p.flag,fx,fy,f,f);
+    if(!p.alive){ctx.strokeStyle='#ffffff';ctx.lineWidth=Math.max(3,f*.16);ctx.lineCap='square';ctx.beginPath();ctx.moveTo(fx+f*.2,fy+f*.2);ctx.lineTo(fx+f*.8,fy+f*.8);ctx.moveTo(fx+f*.8,fy+f*.2);ctx.lineTo(fx+f*.2,fy+f*.8);ctx.stroke()}
+    ctx.font=fs+'px "Architects Daughter", cursive';ctx.textBaseline='middle';ctx.textAlign='left';
+    const label=t>=26?p.name:p.name.slice(0,2);
+    const th=Math.round(fs*1.35),pad=Math.round(fs*.35);
+    const nw=ctx.measureText(label).width+pad*2;
+    const num=p.alive&&showNum(p)?String(p.ap):'';
+    ctx.font='bold '+fs+'px "Courier Prime", monospace';
+    const bw=num?ctx.measureText(num).width+pad*2:0;
+    const tw=nw+bw,ty=fy+f/2-th/2;
+    let tx=fx-2-tw;if(tx<0)tx=fx+f+2;
+    if(num){ctx.fillStyle='#a8323a';ctx.fillRect(tx,ty,bw,th);ctx.fillStyle='#fff';ctx.textAlign='center';ctx.fillText(num,tx+bw/2,ty+th/2+1)}
+    ctx.fillStyle='#15171e';ctx.fillRect(tx+bw,ty,nw,th);
+    ctx.font=fs+'px "Architects Daughter", cursive';ctx.fillStyle='#f4f8ff';ctx.textAlign='left';ctx.fillText(label,tx+bw+pad,ty+th/2+1);
+    if(p.alive&&p.id==vw){const s=Math.max(5,Math.round(t/8));for(let i=0;i<3;i++){ctx.fillStyle='#15171e';ctx.fillRect(fx+i*(s+3),fy-s-6,s+2,s+2);ctx.fillStyle=i<p.hp?'#ff6b5e':'#55698a';ctx.fillRect(fx+1+i*(s+3),fy-s-5,s,s)}}
+    ctx.globalAlpha=1;
+  }
+  const brk=(p,col)=>{const L=Math.max(6,Math.round(t/4)),w=Math.max(2,Math.round(t/14));ctx.fillStyle=col;const x=p.x*t,y=p.y*t;[[x,y,1,1],[x+t,y,-1,1],[x,y+t,1,-1],[x+t,y+t,-1,-1]].forEach(([a,b,sx,sy])=>{ctx.fillRect(sx>0?a:a-L,sy>0?b:b-w,L,w);ctx.fillRect(sx>0?a:a-w,sy>0?b:b-L,w,L)})};
+  if(me&&me.alive&&vw==me.id&&(BLINK||reduce))brk(me,'#f4f8ff');
+  const sel=SEL&&find(G,SEL);if(sel&&sel.alive)brk(sel,'#ffd166');
+}
+cv.addEventListener('click',ev=>{
+  if(!G||!TILE)return;const r=cv.getBoundingClientRect();
+  const x=Math.floor((ev.clientX-r.left)/TILE),y=Math.floor((ev.clientY-r.top)/TILE);
+  const hit=G.players.find(p=>p.alive&&p.x==x&&p.y==y);const me=cur();
+  if(hit){SEL=(me&&hit.id==me.id)||SEL==hit.id?null:hit.id;render();return}
+  SEL=null;
+  if(me&&canAct()&&cheb(me,{x,y})==1)order({type:'move',x,y});else render();
+});
+
+/* ---------- panels ---------- */
+function fmtLeft(ms){if(ms<=0)return'now';const h=Math.floor(ms/36e5),m=Math.ceil(ms%36e5/6e4);return h?h+'h '+m+'m':m+'m'}
+function nameOf(id){const p=G&&find(G,id);if(p)return esc(p.name);const q=ON.players.find(x=>x.id==id);return q?esc(q.name):'Someone'}
+function logLine(e,vw){
+  const by=nameOf(e.by),to=nameOf(e.to);
+  switch(e.type){
+    case'drop':return`<li class="day">Day ${e.day}. Everyone gets 1 AP.</li>`;
+    case'move':return`<li>${by} rolls to ${tileName(e.x,e.y)}.</li>`;
+    case'attack':
+      if(e.kill)return e.by==vw?`<li class="secret">You destroyed ${to}.</li>`:`<li><b>${to} is out.</b></li>`;
+      if(e.by==vw)return`<li class="secret">You hit ${to}.</li>`;
+      if(e.to==vw)return`<li class="secret">${by} hit you.</li>`;
+      return'';
+    case'gift':if(e.priv&&vw!==e.by&&vw!==e.to)return'';return`<li${e.priv?' class="secret"':''}>${e.by==vw?'You':by} slipped ${e.to==vw?'you':to} 1 AP.</li>`;
+    case'upgrade':return`<li>${by} extends range to ${e.range}.</li>`;
+    case'blocked':return e.by==vw?`<li class="mut">Your order bounced: ${esc(e.why)}.</li>`:'';
+  }
+  return'';
+}
+function render(){
+  const lobby=MODE=='online'&&ON.room&&ON.room.status!='live';
+  $('#fig').hidden=!!lobby;$('#lobby').hidden=!lobby;
+  renderStatus();renderChat();
+  if(lobby){renderLobby();$('#mine').innerHTML='<h2>Lobby</h2><p>Players are lining up. The board appears when the host starts the war. Use comms to make your first deals.</p>';$('#roster').innerHTML='';$('#log').innerHTML='';return}
+  draw();renderOver();
+  const me=cur(),vw=viewer();
+  if(!G){$('#mine').innerHTML='';$('#roster').innerHTML='';$('#log').innerHTML='';return}
+  let h='';
+  if(!me){h='<h2>Spectating</h2><p>You’re watching this war. Players only join in the lobby.</p>'}
+  else if(vw!=me.id){h=`<h2>Pass the device</h2><p>${esc(me.name)} is up next. Their secrets stay hidden until they take over.</p>`}
+  else{
+    h+=`<div class="me"><img src="${flagImg(me.flag)}" alt=""><div><div class="name">${esc(me.name)}</div><div class="mut">${esc(me.motto)}</div></div></div>`;
+    h+=`<div class="stat"><div>Hearts<b>${me.hp}</b></div><div>AP<b>${me.ap}</b></div><div>Range<b>${me.range}</b></div></div>`;
+    if(!me.alive)h+='<p>You’re out. You can still talk.</p>';
+    else{
+      h+='<p class="note">Tap a dot to move. Tap a flag to target it. Only you can see your hearts.</p>';
+      const t=SEL&&find(G,SEL);
+      if(t&&t.alive){const d=cheb(me,t);h+=`<div class="target"><div class="name">${esc(t.name)}</div><div class="mut">${d} tile${d==1?'':'s'} away · ${d<=me.range?'in range':'out of range'}</div><div class="row" style="margin-top:8px"><button class="red" id="aAtk">Attack · 1 AP</button><button id="aGift">Give 1 AP</button></div></div>`}
+      h+=`<div class="row" style="margin-top:10px"><button id="aUp">Extend range · 2 AP</button></div>`;
+      if(G.mode=='local')h+=`<div class="row" style="margin-top:10px"><button id="aUndo">Undo</button><button id="aEnd" class="hot">End turn</button></div>`;
+    }
+  }
+  $('#mine').innerHTML=h;
+  const on=(id,f)=>{const b=document.getElementById(id);if(b)b.onclick=f};
+  on('aAtk',()=>order({type:'attack',to:SEL}));on('aGift',()=>order({type:'gift',to:SEL}));on('aUp',()=>order({type:'upgrade'}));
+  on('aUndo',()=>{if(!G.undo.length)return toast('Nothing to undo this turn');const s=JSON.parse(G.undo.pop());const u=G.undo;Object.assign(G,s,{undo:u});saveLocal();render()});
+  on('aEnd',()=>{endTurn(G);SEL=null;saveLocal();render()});
+  const ps=[...G.players].sort((a,b)=>b.alive-a.alive);
+  const apVis=p=>G.giftVis!='private'||p.id==vw;
+  $('#roster').innerHTML=ps.map(p=>`<li class="${p.alive?'':'dead'}"><img src="${flagImg(p.flag)}" alt=""><span><b>${esc(p.name)}</b>${p.id==vw?' <span class="mut">(you)</span>':''}<br><span class="mut">${p.alive?'range '+p.range+' · '+(apVis(p)?p.ap+' AP':'? AP')+' · '+tileName(p.x,p.y):'out'}</span></span>${p.alive&&p.id==vw?hearts(p):''}</li>`).join('');
+  $('#log').innerHTML=[...G.log].reverse().slice(0,80).map(e=>logLine(e,vw)).join('')||'<li class="mut">Quiet so far.</li>';
+}
+function renderStatus(){
+  let h='',u1='',u2='';
+  if(MODE=='online'&&ON.room){
+    const r=ON.room;
+    h+=`<div class="row" style="justify-content:space-between"><h2 style="margin:0">Room ${esc(ON.code)}</h2><button id="sCopy">Copy code</button></div>`;
+    if(r.status=='live'&&G){h+=`<p><b>Day ${G.day}</b> · next AP drop in ${fmtLeft(G.nextDrop-Date.now())}</p>`;u1='Room '+ON.code;u2='Gifts '+(r.giftVis=='private'?'private':'public')}
+    else h+='<p>Waiting in the lobby.</p>';
+    h+='<div class="row"><button id="sLeave">Leave room</button></div>';
+  }else if(G){
+    const p=cur();
+    h+=`<h2>Day ${G.day}</h2><p>${G.winner?esc(find(G,G.winner).name)+' wins the war.':esc(p.name)+'’s orders.'}</p>`;
+    if(G.sample)h+='<p class="note">Sample war, mid-game. Play it, or start your own from Local game.</p>';
+    u1='Pass-and-play';u2='Gifts '+(G.giftVis=='private'?'private':'public');
+  }
+  $('#status').innerHTML=h;$('#under1').textContent=u1;$('#under2').textContent=u2;
+  const c=$('#sCopy');if(c)c.onclick=async()=>{try{await navigator.clipboard.writeText(ON.code);toast('Code copied')}catch(e){toast('Code: '+ON.code)}};
+  const l=$('#sLeave');if(l)l.onclick=leaveRoom;
+}
+function renderOver(){
+  const o=$('#over');if(!G){o.hidden=true;return}
+  if(G.winner){const w=find(G,G.winner);o.innerHTML=`<img src="${flagImg(w.flag)}" alt=""><div class="big">${esc(w.name)} wins</div><div>Last flag standing after ${G.day} day${G.day==1?'':'s'}.</div><button class="hot" id="oNew">New war</button>`;o.hidden=false;$('#oNew').onclick=()=>MODE=='online'?leaveRoom():openLocal();return}
+  if(G.mode=='local'&&G.handoff){const p=cur();o.innerHTML=`<img src="${flagImg(p.flag)}" alt=""><div class="big">Pass to ${esc(p.name)}</div><div>Day ${G.day}. Everyone else, look away.</div><button class="hot" id="oGo">I’m ${esc(p.name)}. Go.</button>`;o.hidden=false;$('#oGo').onclick=()=>{G.handoff=false;saveLocal();render()};return}
+  o.hidden=true;
+}
+
+/* ---------- chat ---------- */
+function chatPeople(){if(MODE=='online')return ON.players.map(p=>({id:p.id,name:p.name}));return G?G.players.map(p=>({id:p.id,name:p.name})):[]}
+function chatMsgs(){return MODE=='online'?ON.chat:(G&&G.chat)||[]}
+let lastChatKey='';
+function renderChat(){
+  const vw=viewer(),people=chatPeople();
+  const can=!!vw&&(MODE=='online'?!!ON.code:!!G&&!G.handoff);
+  const vis=chatMsgs().filter(m=>m.to=='all'||m.to==vw||m.from==vw);
+  const nm=id=>{const p=people.find(x=>x.id==id);return p?esc(p.name):'Someone'};
+  const box=$('#chat');
+  box.innerHTML=!vw?'<p class="note">Comms are hidden while the device changes hands.</p>':vis.length?vis.slice(-80).map(m=>{const dm=m.to!='all';const who=m.from==vw?'You':nm(m.from);const tgt=dm?(m.to==vw?' → you':' → '+nm(m.to)):'';return`<div class="msg${dm?' dm':''}"><div class="who">${who}${tgt}${dm?' (private)':''}${m.day?' · day '+m.day:''}</div>${esc(m.text)}</div>`}).join(''):'<p class="note">No messages yet. Open with a threat or a treaty.</p>';
+  box.scrollTop=box.scrollHeight;
+  const sel=$('#chatTo'),prev=sel.value;
+  const key=people.map(p=>p.id+p.name).join()+vw;
+  if(key!=lastChatKey){sel.innerHTML='<option value="all">To everyone</option>'+people.filter(p=>p.id!=vw).map(p=>`<option value="${esc(p.id)}">Only to ${esc(p.name)}</option>`).join('');lastChatKey=key;if([...sel.options].some(o=>o.value==prev))sel.value=prev}
+  $('#chatForm').hidden=!can;
+}
+$('#chatForm').addEventListener('submit',async e=>{
+  e.preventDefault();const text=$('#chatText').value.trim();if(!text)return;
+  const vw=viewer();if(!vw)return;const to=$('#chatTo').value||'all';
+  if(MODE=='local'){if(!G.chat)G.chat=[];G.chat.push({from:vw,to,text,day:G.day,ts:Date.now()});if(G.sample)G.sample=false;$('#chatText').value='';saveLocal();renderChat();return}
+  try{await db.collection('rooms/'+ON.code+'/chat').add({from:ME,to,text:text.slice(0,280),day:G?G.day:0,ts:Date.now()});$('#chatText').value=''}
+  catch(err){toast('Message didn’t send. Try again.')}
+});
+
+/* ---------- local setup ---------- */
+let SETUP=[],EDIT=0;
+const NAMES=['Lady','Moxie','Brutus','Wren','Kit','Rook','Juno','Ash','Vex','Bramble','Onyx','Pip','Saga','Thorn','Ember','Dusk'];
+function blank(i){return{name:NAMES[i%16],flag:JSON.parse(JSON.stringify(PRESETS[i%PRESETS.length][1])),motto:''}}
+function fixFlag(t,i){if(!t.flag||!t.flag.c)t.flag=JSON.parse(JSON.stringify(PRESETS[i%PRESETS.length][1]));return t}
+function readSetup(){SETUP=SETUP.map((t,i)=>({...t,name:($('#sn'+i).value.trim()||'Player').slice(0,14),motto:$('#sm'+i).value.trim().slice(0,40)}))}
+function drawSetup(){
+  $('#setupRows').innerHTML=SETUP.map((t,i)=>`<div class="trow"><button type="button" class="fl" data-ed="${i}" aria-pressed="${i==EDIT}" aria-label="Edit flag for ${esc(t.name)}"><img src="${flagImg(t.flag)}" alt=""></button><input id="sn${i}" aria-label="Name" maxlength="14" value="${esc(t.name)}"><input class="motto" id="sm${i}" aria-label="Motto" maxlength="40" placeholder="Motto" value="${esc(t.motto)}"><button type="button" class="x" data-rm="${i}" aria-label="Remove player">×</button></div>`).join('');
+  $('#setupRows').querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{readSetup();if(SETUP.length<=2)return toast('A war needs two players');SETUP.splice(+b.dataset.rm,1);EDIT=Math.min(EDIT,SETUP.length-1);drawSetup()});
+  $('#setupRows').querySelectorAll('[data-ed]').forEach(b=>b.onclick=()=>{readSetup();EDIT=+b.dataset.ed;drawSetup()});
+  flagEditor($('#setupFlag'),()=>SETUP[EDIT].flag,f=>{readSetup();SETUP[EDIT].flag=f;$('#setupRows').querySelectorAll('.fl img')[EDIT].src=flagImg(f)},'Flag for '+SETUP[EDIT].name);
+}
+const sizeOpts=sel=>{sel.innerHTML='<option value="0">Auto</option>'+[...Array(17)].map((_,i)=>`<option value="${i+8}">${i+8} × ${i+8}</option>`).join('')};
+sizeOpts($('#lSize'));sizeOpts($('#oSize'));
+$('#oMax').innerHTML=[...Array(15)].map((_,i)=>`<option value="${i+2}"${i+2==8?' selected':''}>${i+2}</option>`).join('');
+$('#oDrop').innerHTML='<option value="-1">When the war starts</option>'+[...Array(24)].map((_,h)=>`<option value="${h}"${h==9?' selected':''}>${String(h).padStart(2,'0')}:00 daily</option>`).join('');
+function openLocal(){SETUP=(store.get('setup2')||[0,1,2,3].map(blank)).map(fixFlag);EDIT=0;drawSetup();$('#dLocal').showModal()}
+$('#addTank').onclick=()=>{readSetup();if(SETUP.length>=16)return toast('16 players max');SETUP.push(blank(SETUP.length));EDIT=SETUP.length-1;drawSetup()};
+$('#lCancel').onclick=()=>$('#dLocal').close();
+$('#lStart').onclick=()=>{readSetup();store.set('setup2',SETUP);if(MODE=='online')leaveRoom(true);LOCAL=newLocal(SETUP,+$('#lSize').value,$('#lGift').value,'L'+Date.now()+Math.random());G=LOCAL;SEL=null;saveLocal();$('#dLocal').close();render()};
+$('#bLocal').onclick=openLocal;
+$('#bRules').onclick=()=>$('#dRules').showModal();
+document.querySelectorAll('dialog').forEach(d=>d.addEventListener('click',e=>{if(e.target.matches('[data-close]'))d.close()}));
+
+/* ---------- online ---------- */
+const AL='ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const keyOf=id=>String(id).replace(/[^A-Za-z0-9_\-.~:@+]/g,'_').slice(0,180);
+let MYT=null;
+function myTank(){if(!MYT)MYT=fixFlag(store.get('mytank2')||{...blank(0),flag:randomFlag()},0);return MYT}
+function readMine(){const t=myTank();t.name=($('#oName').value.trim()||'Player').slice(0,14);t.motto=$('#oMotto').value.trim().slice(0,40);store.set('mytank2',t);return{name:t.name,motto:t.motto,flag:t.flag}}
+function openOnline(){
+  const ok=!!(db&&ME);$('#onNo').hidden=ok;$('#onYes').hidden=!ok;$('#oErr').textContent='';
+  if(ok){
+    const t=myTank();$('#oName').value=t.name;$('#oMotto').value=t.motto;
+    flagEditor($('#oFlag'),()=>myTank().flag,f=>{myTank().flag=f;store.set('mytank2',MYT)},'Your flag');
+    const last=store.get('room');$('#oRejoin').innerHTML=last&&last!=ON.code?`<div class="row"><button id="oRe">Rejoin room ${esc(last)}</button></div>`:'';
+    const re=$('#oRe');if(re)re.onclick=()=>{$('#dOnline').close();enterRoom(last)};
+    if(CANWRITE===false)$('#oErr').textContent='Can\u2019t write to the game server. Reload and try again.';
+  }
+  $('#dOnline').showModal();
+}
+const tab=c=>{$('#tCreate').setAttribute('aria-pressed',c);$('#tJoin').setAttribute('aria-pressed',!c);$('#pCreate').hidden=!c;$('#pJoin').hidden=c};
+$('#tCreate').onclick=()=>tab(true);$('#tJoin').onclick=()=>tab(false);
+$('#bOnline').onclick=openOnline;
+function onErr(e){toast(e&&e.code=='revoked'?'Access to this room ended.':'Lost contact with the room. It will retry.')}
+async function freshCode(){for(let i=0;i<10;i++){let c='';for(let k=0;k<5;k++)c+=AL[Math.floor(Math.random()*AL.length)];const s=await db.doc('rooms/'+c).get();if(!s.exists)return c}throw new Error('no code')}
+const noWrite='The database refused that. Check the Firestore rules are published.';
+$('#oCreate').onclick=async()=>{
+  if(BUSY)return;BUSY=true;$('#oErr').textContent='';
+  try{const t=readMine();const code=await freshCode();const now=Date.now();
+    await db.doc('rooms/'+code).set({code,host:ME,max:+$('#oMax').value,size:+$('#oSize').value,dropHour:+$('#oDrop').value,giftVis:$('#oGift').value,status:'lobby',created:now});
+    await db.doc('rooms/'+code+'/players/'+ME).set({...t,joined:now});
+    $('#dOnline').close();enterRoom(code);
+  }catch(e){$('#oErr').textContent=e&&(e.code=='permission-denied'||e.code=='invalid_argument')?noWrite:'Couldn’t create the room. Try again.'}
+  BUSY=false;
+};
+$('#oJoin').onclick=async()=>{
+  if(BUSY)return;const code=$('#oCode').value.trim().toUpperCase();if(!/^[A-Z0-9]{5}$/.test(code)){$('#oErr').textContent='Room codes are 5 characters.';return}
+  BUSY=true;$('#oErr').textContent='';
+  try{const t=readMine();
+    const s=await db.doc('rooms/'+code).get();if(!s.exists)throw{msg:'No room with that code.'};
+    const r=s.data();const mine=await db.doc('rooms/'+code+'/players/'+ME).get();
+    if(r.status=='live'&&!mine.exists){$('#dOnline').close();BUSY=false;toast('That war already started. You can watch.');enterRoom(code);return}
+    if(!mine.exists){const ps=await db.collection('rooms/'+code+'/players').get();if(ps.size>=r.max)throw{msg:'That room is full.'}}
+    if(r.status!='live')await db.doc('rooms/'+code+'/players/'+ME).set({...t,joined:mine.exists?mine.data().joined:Date.now()});
+    $('#dOnline').close();enterRoom(code);
+  }catch(e){$('#oErr').textContent=e.msg||((e.code=='permission-denied'||e.code=='invalid_argument')?noWrite:'Couldn’t join. Try again.')}
+  BUSY=false;
+};
+function enterRoom(code){
+  ON.unsubs.forEach(u=>u());ON.unsubs=[];Object.assign(ON,{code,room:null,players:[],actions:[],chat:[],loaded:false});
+  MODE='online';G=null;SEL=null;store.set('room',code);render();
+  const lt=setTimeout(()=>{if(!ON.loaded)toast('Can’t reach the room yet. Still trying.')},10000);
+  const base='rooms/'+code;
+  ON.unsubs.push(db.doc(base).onSnapshot(s=>{ON.loaded=true;clearTimeout(lt);ON.room=s.exists?s.data():null;if(!s.exists&&!s.metadata.fromCache){toast('That room doesn’t exist.');leaveRoom(true);return}derive()},onErr));
+  ON.unsubs.push(db.collection(base+'/players').onSnapshot(s=>{ON.players=s.docs.map(d=>({id:d.id,...d.data()}));derive()},onErr));
+  ON.unsubs.push(db.collection(base+'/actions').orderBy('ts').limit(1000).onSnapshot(s=>{ON.actions=s.docs.map(d=>({id:d.id,...d.data()}));derive()},onErr));
+  const parts={a:[],b:[],c:[]};const merge=()=>{const m=new Map();[...parts.a,...parts.b,...parts.c].forEach(x=>m.set(x.id,x));ON.chat=[...m.values()].sort((x,y)=>x.ts-y.ts);renderChat()};
+  const chat=db.collection(base+'/chat');
+  [['a',chat.where('to','==','all')],['b',chat.where('to','==',ME)],['c',chat.where('from','==',ME)]].forEach(([k,q])=>ON.unsubs.push(q.onSnapshot(s=>{parts[k]=s.docs.map(d=>({id:d.id,...d.data()}));merge()},onErr)));
+}
+function derive(){
+  if(MODE!='online')return;const r=ON.room;
+  G=r&&r.status=='live'?deriveOnline(r,ON.players,ON.actions,Date.now()):null;
+  render();
+}
+async function leaveRoom(quiet){
+  const r=ON.room,code=ON.code;
+  ON.unsubs.forEach(u=>u());ON.unsubs=[];
+  if(r&&r.status!='live'&&code&&ME&&quiet!==true){try{await db.doc('rooms/'+code+'/players/'+ME).delete()}catch(e){}}
+  Object.assign(ON,{code:null,room:null,players:[],actions:[],chat:[]});
+  if(quiet!==true)store.set('room',null);
+  MODE='local';G=LOCAL;SEL=null;render();
+}
+function renderLobby(){
+  const r=ON.room,host=r.host==ME,ps=[...ON.players].sort((a,b)=>a.joined-b.joined);
+  const drop=r.dropHour<0?'when the war starts':String(r.dropHour).padStart(2,'0')+':00 (host’s clock)';
+  const sz=r.size||sizeFor(Math.max(2,ps.length));
+  $('#lobby').innerHTML=`<h2>Room code</h2><div class="code">${esc(ON.code)}</div>
+  <p>Send this code to your crew. They open this same page, tap Online room, then Join.</p>
+  <h2 style="margin-top:16px">${ps.length} of ${r.max} players</h2>
+  <ul>${ps.map(p=>`<li><img src="${flagImg(p.flag)}" alt=""><span><b>${esc(p.name)}</b>${p.id==r.host?' <span class="mut">host</span>':''}${p.id==ME?' <span class="mut">(you)</span>':''}<br><span class="mut">${esc(p.motto)}</span></span></li>`).join('')}</ul>
+  <p class="note">Board ${sz} × ${sz}${r.size?'':' (auto)'} · AP drops daily, ${drop} · gifts ${r.giftVis}</p>
+  <div class="row">${host?'<button class="hot" id="lgo">Start the war</button>':'<span class="note">Waiting for the host to start.</span>'}</div>`;
+  const go=$('#lgo');if(go)go.onclick=async()=>{
+    if(ps.length<2)return toast('A war needs two players');
+    const now=Date.now();let fd=now;
+    if(r.dropHour>=0){const d=new Date(now);d.setMinutes(0,0,0);d.setHours(r.dropHour);if(d.getTime()<=now)d.setDate(d.getDate()+1);fd=d.getTime()}
+    try{await db.doc('rooms/'+ON.code).update({status:'live',start:now,seed:ON.code+now,firstDrop:fd,roster:ps.slice(0,r.max).map(p=>p.id)})}catch(e){toast('Couldn’t start. Try again.')}
+  };
+}
+
+/* ---------- boot ---------- */
+async function caps(){
+  const cfg=window.FIREBASE_CONFIG;
+  if(!window.firebase||!cfg||!cfg.apiKey||cfg.apiKey.indexOf('PASTE')==0)return;
+  try{
+    firebase.initializeApp(cfg);
+    const cred=await firebase.auth().signInAnonymously();
+    db=firebase.firestore();ME=cred.user.uid;CANWRITE=true;
+  }catch(e){db=null;ME=null;toast('Couldn\u2019t connect to the game server.')}
+  const last=store.get('room');if(db&&ME&&last&&MODE=='local'&&(!LOCAL||LOCAL.sample))enterRoom(last);
+}
+function start(data){
+  let saved=data&&data.local||store.get('local2');
+  if(saved&&saved.players&&saved.players.some(p=>!p.flag))saved=null;
+  LOCAL=saved||sample();if(!LOCAL.chat)LOCAL.chat=[];G=LOCAL;
+  render();caps();
+  new ResizeObserver(()=>draw()).observe($('#fig'));
+  if(document.fonts)document.fonts.ready.then(()=>draw());
+  if(!reduce)setInterval(()=>{BLINK=!BLINK;draw()},600);
+  setInterval(()=>{if(MODE=='online')derive();else renderStatus()},30000);
+}
+window.claude?.hot?.snapshot?.(()=>({local:LOCAL}));
+window.claude?.hot?.ready?window.claude.hot.ready(start):start(window.claude?.hot?.data??{});
+}
+</script>
+</body>
+</html>
