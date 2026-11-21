@@ -170,7 +170,7 @@ label{display:block;font:16px/1.6 var(--hand)}
 <dialog id="dRules">
   <h2>Rules of engagement</h2>
   <ul class="rules">
-    <li>Everyone starts with 3 hearts, 0 AP and a range of 2, somewhere random on the map.</li>
+    <li>Everyone starts with 3 hearts, 1 AP and a range of 2, somewhere random on the map.</li>
     <li>Your hearts are secret. Nobody else sees them, and only you and your target see a hit land. A kill is public.</li>
     <li>Everyone gets 1 AP per day. AP never expires. Spend it whenever you like.</li>
     <li>Move one tile in any of 8 directions: 1 AP. You can't drive onto another tank.</li>
@@ -261,7 +261,7 @@ function deriveOnline(room,players,actions,now){
   const roster=(room.roster||[]).map(id=>players.find(p=>p.id==id)).filter(Boolean);
   const size=room.size||sizeFor(roster.length);
   const pos=spawn(roster.length,size,room.seed);
-  const st={mode:'online',size,day:0,log:[],winner:null,giftVis:room.giftVis,players:roster.map((o,i)=>Object.assign(mkPlayer(o,pos[i]),{delta:0}))};
+  const st={mode:'online',size,day:0,log:[],winner:null,giftVis:room.giftVis,players:roster.map((o,i)=>Object.assign(mkPlayer(o,pos[i]),{delta:room.startAP??1}))};
   let last=0;
   const catchUp=d=>{while(last<d&&!st.winner){last++;st.log.push({type:'drop',day:last,ts:room.firstDrop+(last-1)*DAY})}};
   const acts=[...actions].sort((a,b)=>a.ts-b.ts||(a.id<b.id?-1:1));
@@ -614,7 +614,7 @@ $('#oCreate').onclick=async()=>{
     await db.doc('rooms/'+code).set({code,host:ME,max:+$('#oMax').value,size:+$('#oSize').value,dropHour:+$('#oDrop').value,giftVis:$('#oGift').value,status:'lobby',created:now});
     await db.doc('rooms/'+code+'/players/'+ME).set({...t,joined:now});
     $('#dOnline').close();enterRoom(code);
-  }catch(e){$('#oErr').textContent=e&&(e.code=='permission-denied'||e.code=='invalid_argument')?noWrite:'Couldn’t create the room. Try again.'}
+  }catch(e){$('#oErr').textContent=e&&(e.code=='permission-denied'||e.code=='invalid_argument')?noWrite:'Couldn’t create the room. Firebase says: '+((e&&e.code)||'')+' '+((e&&e.message)||e);console.error(e)}
   BUSY=false;
 };
 $('#oJoin').onclick=async()=>{
@@ -627,7 +627,7 @@ $('#oJoin').onclick=async()=>{
     if(!mine.exists){const ps=await db.collection('rooms/'+code+'/players').get();if(ps.size>=r.max)throw{msg:'That room is full.'}}
     if(r.status!='live')await db.doc('rooms/'+code+'/players/'+ME).set({...t,joined:mine.exists?mine.data().joined:Date.now()});
     $('#dOnline').close();enterRoom(code);
-  }catch(e){$('#oErr').textContent=e.msg||((e.code=='permission-denied'||e.code=='invalid_argument')?noWrite:'Couldn’t join. Try again.')}
+  }catch(e){$('#oErr').textContent=e.msg||((e.code=='permission-denied'||e.code=='invalid_argument')?noWrite:'Couldn’t join. Firebase says: '+(e.code||'')+' '+(e.message||e));console.error(e)}
   BUSY=false;
 };
 function enterRoom(code){
