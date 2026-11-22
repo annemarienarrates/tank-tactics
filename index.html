@@ -136,7 +136,7 @@ label{display:block;font:16px/1.6 var(--hand)}
   <div class="row"><button id="addTank">Add player</button></div>
   <div class="grid2">
     <label>Board size<select id="lSize"></select></label>
-    <label>AP gifts<select id="lGift"><option value="public">Public</option><option value="private">Private</option></select></label>
+    <label>Who sees gifts<select id="lGift"><option value="public">Everyone</option><option value="private">Only giver and receiver</option></select></label>
   </div>
   <div class="row"><button id="lCancel">Cancel</button><button id="lStart" class="hot">Deploy</button></div>
 </dialog>
@@ -154,7 +154,7 @@ label{display:block;font:16px/1.6 var(--hand)}
         <label>Max players<select id="oMax"></select></label>
         <label>Board size<select id="oSize"></select></label>
         <label>Daily AP drop<select id="oDrop"></select></label>
-        <label>AP gifts<select id="oGift"><option value="public">Public</option><option value="private">Private</option></select></label>
+        <label>Who sees gifts<select id="oGift"><option value="public">Everyone</option><option value="private">Only giver and receiver</option></select></label>
       </div>
       <div class="row"><button data-close>Cancel</button><button id="oCreate" class="hot">Create room</button></div>
     </div>
@@ -170,18 +170,15 @@ label{display:block;font:16px/1.6 var(--hand)}
 <dialog id="dRules">
   <h2>Rules of engagement</h2>
   <ul class="rules">
-    <li>Everyone starts with 3 hearts, 1 AP and a range of 2, somewhere random on the map.</li>
-    <li>Your hearts are secret. Nobody else sees them, and only you and your target see a hit land. A kill is public.</li>
-    <li>Everyone gets 1 AP per day. AP never expires. Spend it whenever you like.</li>
-    <li>Move one tile in any of 8 directions: 1 AP. You can't drive onto another tank.</li>
-    <li>Attack a tank in range: 1 AP. It loses a heart.</li>
-    <li>Give 1 AP to a tank in range: costs you 1 AP.</li>
-    <li>Extend your range by 1: 2 AP. No cap. Range is a square, so diagonals count.</li>
-    <li>Lose all 3 hearts and you're out. No jury, no revivals. Last tank standing wins.</li>
-    <li>Comms go to everyone, or privately to one player.</li>
-    <li>Online, AP drops once a day at the host's chosen time. Locally, each full round is a day.</li>
+    <li>Start: 3 hidden hearts, 1 AP, range 2.</li>
+    <li>Get 1 AP a day. It never expires.</li>
+    <li>Move 1 tile (any direction): 1 AP.</li>
+    <li>Attack a tank in range: 1 AP.</li>
+    <li>Give a tank in range 1 AP: 1 AP.</li>
+    <li>Extend range by 1: 2 AP.</li>
+    <li>Lose 3 hearts and you’re out. Last tank standing wins.</li>
   </ul>
-  <p class="note">Adapted from Luke Muscat's Tank Turn Tactics, the office game Halfbrick had to ban.</p>
+  <p class="note">Only you see your hearts and AP. Kills are public.</p>
   <div class="row"><button data-close>Got it</button></div>
 </dialog>
 
@@ -422,7 +419,7 @@ function draw(){
     ctx.strokeStyle='#f4f8ff';ctx.lineWidth=Math.max(2,t/16);ctx.setLineDash([t/5,t/8]);ctx.strokeRect(x0*t+2,y0*t+2,(x1-x0+1)*t-4,(y1-y0+1)*t-4);ctx.setLineDash([]);
     if(act&&me.ap>=1)for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const x=me.x+dx,y=me.y+dy;if((dx||dy)&&x>=0&&y>=0&&x<n&&y<n&&!occupied(G,x,y)){ctx.fillStyle='rgba(225,232,242,.85)';ctx.beginPath();ctx.arc(x*t+t/2,y*t+t/2,Math.max(4,t*.15),0,7);ctx.fill()}}
   }
-  const showNum=p=>G.giftVis!='private'||p.id==vw;
+  const showNum=p=>p.id==vw;
   const fs=Math.max(13,Math.round(t*.34));
   const order_=[...G.players].sort((a,b)=>a.alive-b.alive);
   for(const p of order_){
@@ -507,7 +504,7 @@ function render(){
   on('aUndo',()=>{if(!G.undo.length)return toast('Nothing to undo this turn');const s=JSON.parse(G.undo.pop());const u=G.undo;Object.assign(G,s,{undo:u});saveLocal();render()});
   on('aEnd',()=>{endTurn(G);SEL=null;saveLocal();render()});
   const ps=[...G.players].sort((a,b)=>b.alive-a.alive);
-  const apVis=p=>G.giftVis!='private'||p.id==vw;
+  const apVis=p=>p.id==vw;
   $('#roster').innerHTML=ps.map(p=>`<li class="${p.alive?'':'dead'}"><img src="${flagImg(p.flag)}" alt=""><span><b>${esc(p.name)}</b>${p.id==vw?' <span class="mut">(you)</span>':''}<br><span class="mut">${p.alive?'range '+p.range+' · '+(apVis(p)?p.ap+' AP':'? AP')+' · '+tileName(p.x,p.y):'out'}</span></span>${p.alive&&p.id==vw?hearts(p):''}</li>`).join('');
   $('#log').innerHTML=[...G.log].reverse().slice(0,80).map(e=>logLine(e,vw)).join('')||'<li class="mut">Quiet so far.</li>';
 }
